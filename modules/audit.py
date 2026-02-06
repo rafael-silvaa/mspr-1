@@ -36,6 +36,14 @@ KNOWN_HOSTS = {
     "192.168.10.254": "pfSense 2.7.2"
 }
 
+# hostname aliases for better readability
+HOSTNAME_ALIASES = {
+    "SRV-GW-LILLE.ntl.local": "Firewall pfSense (Lille)",
+    "DESKTOP-00FLKIE.ntl.local": "Poste Admin",
+    "DC01.ntl.local": "Contrôleur de Domaine",
+}
+
+
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         print(f"[ERREUR] Config introuvable : {CONFIG_FILE}")
@@ -190,17 +198,30 @@ def scan_subnet_and_export(profile, ports_to_scan):
 
             if is_alive:
                 # reverse dns
-                try :
+                try:
                     hostname = socket.gethostbyaddr(ip_str)[0]
+                    # apply alias if available
+                    display_name = HOSTNAME_ALIASES.get(hostname, hostname)
                 except:
                     hostname = "N/A"
+                    display_name = "N/A"
                 
-                # os
-                os_detected = KNOWN_HOSTS.get(ip_str, "OS Inconnu")
+                # os detection: try static mapping first, then automatic detection
+                os_detected = KNOWN_HOSTS.get(ip_str)
+                
+                if not os_detected:
+                    # fallback to automatic detection
+                    detected_type = detect_os_type(ip_str)
+                    if detected_type == "linux_ssh":
+                        os_detected = "Linux (SSH détecté)"
+                    elif detected_type == "windows_remote":
+                        os_detected = "Windows (RPC/SMB détecté)"
+                    else:
+                        os_detected = "OS Inconnu"
 
                 # display firewall for pfsense
-                if hostname == "N/A" and "pfSense" in os_detected:
-                    hostname = "Firewall"
+                if display_name == "N/A" and os_detected and "pfSense" in os_detected:
+                    display_name = "Firewall"
 
                 # eol
                 status_eol, date_eol = get_eol_status(os_detected)
@@ -208,7 +229,7 @@ def scan_subnet_and_export(profile, ports_to_scan):
                 # results
                 results_to_write.append({
                     'IP': ip_str,
-                    'Nom (DNS)': hostname,
+                    'Nom (DNS)': display_name,
                     'OS Détecté': os_detected,
                     'Statut Support (EOL)': status_eol,
                     'Date Fin Support': date_eol,
