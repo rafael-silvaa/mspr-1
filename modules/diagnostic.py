@@ -104,21 +104,55 @@ def check_simple_ports(ip, ports):
     
     print(f"    > Test du Ping...", end=' ', flush=True)
     try:
-        param = '-n' if platform.system().lower() == 'windows' else '-c'
-        command = ['ping', param, '1', '-W', '1000', ip] # -W 1000 = Timeout 1s max
+        if platform.system().lower() == 'windows':
+            # windows: -n count, -w timeout in milliseconds
+            command = ['ping', '-n', '1', '-w', '1000', ip]
+        else:
+            # linux/unix: -c count, -W timeout in seconds
+            command = ['ping', '-c', '1', '-W', '1', ip]
         
-        response = psutil.subprocess.call(
-            command, 
-            stdout=psutil.subprocess.DEVNULL, 
-            stderr=psutil.subprocess.DEVNULL
+        # capture output to parse response time
+        result = psutil.subprocess.run(
+            command,
+            stdout=psutil.subprocess.PIPE,
+            stderr=psutil.subprocess.PIPE,
+            text=True,
+            timeout=2
         )
         
-        if response == 0:
-            print("OK")
-            info["Ping"] = "OK"
+        if result.returncode == 0:
+            # parse ping time from output
+            output = result.stdout
+            ping_time = None
+            
+            if platform.system().lower() == 'windows':
+                # windows format: "time=XXms" or "time<1ms"
+                # french windows: "temps=XXms" or "temps<1ms"
+                import re
+                match = re.search(r'(time|temps)[=<](\d+)ms', output, re.IGNORECASE)
+                if match:
+                    ping_time = match.group(2)  # group 2 is the number, group 1 is time/temps
+                elif 'time<1ms' in output.lower() or 'temps<1ms' in output.lower():
+                    ping_time = '<1'
+            else:
+                # linux format: "time=XX.X ms"
+                import re
+                match = re.search(r'time=([\d.]+)\s*ms', output)
+                if match:
+                    ping_time = match.group(1)
+            
+            if ping_time:
+                print(f"OK ({ping_time}ms)")
+                info["Ping"] = f"OK ({ping_time}ms)"
+            else:
+                print("OK")
+                info["Ping"] = "OK"
         else:
             print("Timeout")
             info["Ping"] = "Timeout"
+    except psutil.subprocess.TimeoutExpired:
+        print("Timeout")
+        info["Ping"] = "Timeout"
     except Exception as e:
         print(f"ERREUR ({e})")
         info["Ping"] = "Erreur Commande"
