@@ -27,7 +27,7 @@ API_MAPPING = {
 }
 
 KNOWN_HOSTS = {
-    "192.168.10.10": "Windows Server 2016", # DC01
+    "192.168.10.10": "Windows Server 2022", # DC01
     "192.168.10.11": "Windows Server 2016",
     "192.168.10.21": "Ubuntu 20.04 LTS",
     "192.168.10.22": "Ubuntu 20.04 LTS",
