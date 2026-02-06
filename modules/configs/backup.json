@@ -1,0 +1,17 @@
+{
+    "database": {
+        "host": "localhost",
+        "user": "root",
+        "password": "admin",
+        "db_name": "wms_prod"
+    },
+    "nas": {
+        "host": "192.168.10.22",
+        "user": "nas",
+        "password": "admin",
+        "remote_dir": "/home/nas/backups_wms"
+    },
+    "tools": {
+        "mysqldump_path": "C:\\Program Files\\MySQL\\MySQL Server 8.4\\bin\\mysqldump.exe"
+    }
+}

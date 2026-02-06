@@ -1,0 +1,23 @@
+{
+    "1": {
+        "name": "Contrôleur de Domaine (AD/DNS)",
+        "type": "windows_remote",
+        "ip": "192.168.10.10",
+        "user": "NTL\\SRVAD",
+        "password": "admin"
+    },
+    "2": {
+        "name": "NAS (Stockage)",
+        "type": "linux_ssh",
+        "ip": "192.168.10.22",
+        "user": "nas",
+        "password": "admin"
+    },
+    "3": {
+        "name": "Serveur MySQL (WMS-DB)",
+        "type": "linux_ssh",
+        "ip": "192.168.10.21",
+        "user": "wms",
+        "password": "admin"
+    }
+}
