@@ -41,6 +41,8 @@ HOSTNAME_ALIASES = {
     "SRV-GW-LILLE.ntl.local": "Firewall pfSense (Lille)",
     "DESKTOP-00FLKIE.ntl.local": "Poste Admin",
     "DC01.ntl.local": "Contrôleur de Domaine",
+    "SRV-AD": "Contrôleur de Domaine (AD)",
+    "SRV-WMS": "Serveur MySQL"
 }
 
 
@@ -240,7 +242,14 @@ def scan_subnet_and_export(profile, ports_to_scan):
 
     # display
     for res in results_to_write:
-        print(f"    [+] {res['IP']:<15} ({res['Nom (DNS)']}) | {res['OS Détecté']} | {res['Statut Support (EOL)']} (Fin: {res['Date Fin Support']})")
+        ip = res['IP']
+        name = res['Nom (DNS)']
+        os_info = res['OS Détecté']
+        eol_status = res['Statut Support (EOL)']
+        eol_date = res['Date Fin Support']
+        
+        # improved alignment with proper padding
+        print(f"    [+] {ip:<15} ({name:<30}) | {os_info:<35} | {eol_status:<30} (Fin: {eol_date})")
 
     # csv
     try:
