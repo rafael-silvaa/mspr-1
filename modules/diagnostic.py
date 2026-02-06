@@ -52,6 +52,40 @@ def save_report_json(machine_name, data):
     except Exception as e:
         print(f"\n[ERREUR] Échec de l'export JSON : {e}")
 
+def get_local_health():
+    """gather local system health using psutil"""
+    print(f"[*] Analyse de la machine locale...")
+    info = {}
+    
+    try:
+        # 1. OS info
+        info['OS'] = f"{platform.system()} {platform.release()}"
+        
+        # 2. uptime (calculated from boot time)
+        boot_time = psutil.boot_time()
+        uptime_seconds = time.time() - boot_time
+        uptime_hours = int(uptime_seconds // 3600)
+        uptime_days = uptime_hours // 24
+        uptime_hours_remaining = uptime_hours % 24
+        info['Uptime'] = f"{uptime_days} jours, {uptime_hours_remaining} heures"
+        
+        # 3. CPU usage
+        cpu_percent = psutil.cpu_percent(interval=1)
+        info['CPU'] = f"{cpu_percent}%"
+        
+        # 4. RAM usage
+        ram = psutil.virtual_memory()
+        info['RAM'] = f"{ram.percent}% utilisée ({ram.used // (1024**3)} GB / {ram.total // (1024**3)} GB)"
+        
+        # 5. disk usage (main drive)
+        disk = psutil.disk_usage('/')
+        info['Disque'] = f"{disk.percent}% utilisé ({disk.used // (1024**3)} GB / {disk.total // (1024**3)} GB)"
+        
+        return info
+        
+    except Exception as e:
+        return {"ERREUR": f"Impossible de récupérer les informations locales: {e}"}
+
 def get_remote_linux_health(ip, user, password):
     """connecte SSH + commandes Linux pour récup l'état"""
     print(f"[*] Connexion SSH vers {ip}...")
@@ -121,21 +155,20 @@ def check_simple_ports(ip, ports):
         )
         
         if result.returncode == 0:
-            # parse ping time from output
+            # Parse ping time from output
             output = result.stdout
             ping_time = None
             
             if platform.system().lower() == 'windows':
-                # windows format: "time=XXms" or "time<1ms"
-                # french windows: "temps=XXms" or "temps<1ms"
+                # Windows format: "time=XXms" or "time<1ms"
                 import re
-                match = re.search(r'(time|temps)[=<](\d+)ms', output, re.IGNORECASE)
+                match = re.search(r'time[=<](\d+)ms', output, re.IGNORECASE)
                 if match:
-                    ping_time = match.group(2)  # group 2 is the number, group 1 is time/temps
-                elif 'time<1ms' in output.lower() or 'temps<1ms' in output.lower():
+                    ping_time = match.group(1)
+                elif 'time<1ms' in output.lower():
                     ping_time = '<1'
             else:
-                # linux format: "time=XX.X ms"
+                # Linux format: "time=XX.X ms"
                 import re
                 match = re.search(r'time=([\d.]+)\s*ms', output)
                 if match:
@@ -205,6 +238,91 @@ def display_report(machine_name, data):
     
     print("="*50 + "\n")
 
+def scan_single_machine(key, target):
+    """Scan a single machine and return results"""
+    try:
+        print(f"\n[*] Scanning {target['name']} ({target['ip']})...")
+        
+        # detect OS type
+        detected_type = detect_os_type(target['ip'])
+        current_type = target['type']
+        
+        if target['type'] != 'local' and detected_type != 'unknown':
+            current_type = detected_type
+        
+        # perform scan based on type
+        data = {}
+        if current_type == "local":
+            # local analysis using psutil
+            data = get_local_health()
+            
+        elif current_type == "linux_ssh":
+            # Remote Linux analysis via SSH
+            data = get_remote_linux_health(target["ip"], target.get("user"), target.get("password"))
+            
+        elif current_type == "windows_remote":
+            # Windows remote - port scan
+            data = check_simple_ports(target["ip"], [135, 445, 3389])
+        
+        return target["name"], data, None
+        
+    except Exception as e:
+        return target["name"], None, str(e)
+
+def scan_all_machines():
+    """Scan all machines simultaneously using concurrent execution"""
+    import concurrent.futures
+    
+    inventory = load_inventory()
+    
+    if not inventory:
+        print("[!] Aucune configuration chargée. Vérifiez configs/diagnostic.json")
+        return
+    
+    print("\n" + "="*60)
+    print("--- DIAGNOSTIC SIMULTANÉ DE TOUTES LES MACHINES ---")
+    print("="*60)
+    print(f"[*] Démarrage du scan de {len(inventory)} machine(s)...")
+    print("[*] Cette opération peut prendre quelques secondes.\n")
+    
+    results = []
+    
+    # scan all machines concurrently
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(inventory)) as executor:
+        # submit all scan tasks
+        futures = {executor.submit(scan_single_machine, key, target): (key, target) for key, target in inventory.items()}
+        
+        # collect results as they complete
+        for future in concurrent.futures.as_completed(futures):
+            key, target = futures[future]
+            try:
+                machine_name, data, error = future.result()
+                if error:
+                    print(f"[!] Erreur lors du scan de {machine_name}: {error}")
+                    results.append((machine_name, {"ERREUR": error}))
+                else:
+                    print(f"[✓] {machine_name} - Scan terminé")
+                    results.append((machine_name, data))
+            except Exception as e:
+                print(f"[!] Exception pour {target['name']}: {e}")
+                results.append((target['name'], {"ERREUR": str(e)}))
+    
+    # display all results
+    print("\n" + "="*60)
+    print("RÉSULTATS DU SCAN SIMULTANÉ")
+    print("="*60)
+    
+    for machine_name, data in results:
+        display_report(machine_name, data)
+    
+    # ask if user wants to export all reports
+    print("\n" + "="*60)
+    save_choice = input("Voulez-vous exporter TOUS les rapports en JSON? (y/N) : ")
+    if save_choice.lower() == 'y':
+        for machine_name, data in results:
+            save_report_json(machine_name, data)
+        print(f"\n[OK] {len(results)} rapport(s) exporté(s) dans {LOGS_DIR}")
+
 def run_diagnostic():
     inventory = load_inventory()
 
@@ -223,9 +341,16 @@ def run_diagnostic():
             val = inventory[key]
             print(f"{key}. {val['name']} ({val['ip']})")
         
+        print("a. Scanner toutes les machines simultanément")
         print("q. Quitter")
         
         choice = input("\nVotre choix : ")
+        
+        if choice == 'a':
+            scan_all_machines()
+            wait_for_user()
+            clear_screen()
+            continue
         
         if choice == 'q':
             break
