@@ -27,7 +27,7 @@ API_MAPPING = {
 }
 
 KNOWN_HOSTS = {
-    "192.168.10.10": "Windows Server 2016", # DC01
+    "192.168.10.10": "Windows Server 2022", # DC01
     "192.168.10.11": "Windows Server 2016",
     "192.168.10.21": "Ubuntu 20.04 LTS",
     "192.168.10.22": "Ubuntu 20.04 LTS",
@@ -82,7 +82,6 @@ def fetch_eol_date_from_api(product, version):
                     return str(eol_date)
     except Exception:
         return None
-    return "Erreur API", "N/A"
 
 def get_eol_status(os_name):
     """verif obsolescence via API"""
@@ -113,20 +112,43 @@ def get_eol_status(os_name):
     except ValueError:
         return "Date invalide", eol_date_str
 
+def ping_host(ip_str, timeout=1):
+    """Check if host responds to ICMP ping"""
+    try:
+        # Windows uses -n for count, -w for timeout in ms
+        # Linux uses -c for count, -W for timeout in seconds
+        if platform.system().lower() == "windows":
+            command = ["ping", "-n", "1", "-w", str(timeout * 1000), ip_str]
+        else:
+            command = ["ping", "-c", "1", "-W", str(timeout), ip_str]
+        
+        result = subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout + 1
+        )
+        return result.returncode == 0
+    except:
+        return False
+
 def scan_single_host(ip_str, ports_to_scan):
     open_ports = []
     is_alive = False
 
-    # test ports
+    # First try ICMP ping
+    if ping_host(ip_str, timeout=1):
+        is_alive = True
+
+    # Then test ports (with increased timeout for reliability)
     for port in ports_to_scan:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(0.1)
+        sock.settimeout(0.5)
         res = sock.connect_ex((ip_str, port))
         sock.close()
         if res == 0:
             is_alive = True
             open_ports.append(port)
-            # if port open = host alive
 
     return ip_str, is_alive, open_ports
 
@@ -178,7 +200,7 @@ def scan_subnet_and_export(profile, ports_to_scan):
 
                 # display firewall for pfsense
                 if hostname == "N/A" and "pfSense" in os_detected:
-                    hostname == "Firewall"
+                    hostname = "Firewall"
 
                 # eol
                 status_eol, date_eol = get_eol_status(os_detected)
@@ -213,8 +235,36 @@ def scan_subnet_and_export(profile, ports_to_scan):
     except Exception as e:
         print(f"\n[ERREUR] Problème lors de l'écriture CSV : {e}")
 
+def scan_all_networks(config):
+    """Scan all network profiles simultaneously"""
+    profiles = config.get("scan_profiles", [])
+    ports = config.get("ports_to_scan", [21, 22, 80, 445])
+    
+    if not profiles:
+        print("[!] Aucun profil de réseau trouvé dans la configuration.")
+        return
+    
+    print(f"\n[*] Démarrage de l'audit simultané sur {len(profiles)} réseaux...")
+    print("[*] Cette opération peut prendre plusieurs minutes.\n")
+    
+    # ThreadPoolExecutor to scan all networks in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(profiles)) as executor:
+        futures = {executor.submit(scan_subnet_and_export, profile, ports): profile for profile in profiles}
+        
+        for future in concurrent.futures.as_completed(futures):
+            profile = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                print(f"\n[ERREUR] Échec du scan pour {profile['network_name']}: {e}")
+    
+    print("\n" + "="*60)
+    print("[OK] Tous les audits sont terminés!")
+    print(f"[INFO] {len(profiles)} rapports CSV ont été générés dans {LOGS_DIR}")
+    print("="*60)
+
 def lookup_os_versions():
-    """EOL lookup for given od=s"""
+    """EOL lookup for given OS"""
     clear_screen()
     print("\n--- RECHERCHE MANUELLE EOL ---")
     print("Exemples: ubuntu, windows, debian, centos, fedora...")
@@ -313,14 +363,21 @@ def scan_menu():
         for i, profile in enumerate(profiles):
             print(f"{i + 1}. Auditer {profile['network_name']} ({profile['cidr']})")
 
-        opt_index = len(profiles) + 1
-        print(f"{opt_index}. Encyclopédie (Recherche EOL d'un OS)")
+        opt_scan_all = len(profiles) + 1
+        opt_encyclopedia = len(profiles) + 2
+        
+        print(f"{opt_scan_all}. Auditer TOUS les réseaux simultanément")
+        print(f"{opt_encyclopedia}. Encyclopédie (Recherche EOL d'un OS)")
         
         print("q. Retour")
         
         choice = input("Votre choix : ")
 
-        if choice == str(opt_index):
+        if choice == str(opt_scan_all):
+            scan_all_networks(config)
+            wait_for_user()
+        
+        elif choice == str(opt_encyclopedia):
             lookup_os_versions()
 
         elif choice.isdigit():
