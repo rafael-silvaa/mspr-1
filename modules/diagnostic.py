@@ -138,8 +138,12 @@ def check_simple_ports(ip, ports):
     
     print(f"    > Test du Ping...", end=' ', flush=True)
     try:
-        param = '-n' if platform.system().lower() == 'windows' else '-c'
-        command = ['ping', param, '1', '-W', '1000', ip] # -W 1000 = Timeout 1s max
+        if platform.system().lower() == 'windows':
+            # Windows: -n count, -w timeout in milliseconds
+            command = ['ping', '-n', '1', '-w', '1000', ip]
+        else:
+            # Linux/Unix: -c count, -W timeout in seconds
+            command = ['ping', '-c', '1', '-W', '1', ip]
         
         response = psutil.subprocess.call(
             command, 
