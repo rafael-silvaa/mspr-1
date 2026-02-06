@@ -1,0 +1,3 @@
+backups/
+modules/__pycache__/
+*.csv
