@@ -82,7 +82,6 @@ def fetch_eol_date_from_api(product, version):
                     return str(eol_date)
     except Exception:
         return None
-    return "Erreur API", "N/A"
 
 def get_eol_status(os_name):
     """verif obsolescence via API"""
