@@ -145,18 +145,47 @@ def check_simple_ports(ip, ports):
             # Linux/Unix: -c count, -W timeout in seconds
             command = ['ping', '-c', '1', '-W', '1', ip]
         
-        response = psutil.subprocess.call(
-            command, 
-            stdout=psutil.subprocess.DEVNULL, 
-            stderr=psutil.subprocess.DEVNULL
+        # Capture output to parse response time
+        result = psutil.subprocess.run(
+            command,
+            stdout=psutil.subprocess.PIPE,
+            stderr=psutil.subprocess.PIPE,
+            text=True,
+            timeout=2
         )
         
-        if response == 0:
-            print("OK")
-            info["Ping"] = "OK"
+        if result.returncode == 0:
+            # Parse ping time from output
+            output = result.stdout
+            ping_time = None
+            
+            if platform.system().lower() == 'windows':
+                # Windows format: "time=XXms" or "time<1ms"
+                import re
+                match = re.search(r'time[=<](\d+)ms', output, re.IGNORECASE)
+                if match:
+                    ping_time = match.group(1)
+                elif 'time<1ms' in output.lower():
+                    ping_time = '<1'
+            else:
+                # Linux format: "time=XX.X ms"
+                import re
+                match = re.search(r'time=([\d.]+)\s*ms', output)
+                if match:
+                    ping_time = match.group(1)
+            
+            if ping_time:
+                print(f"OK ({ping_time}ms)")
+                info["Ping"] = f"OK ({ping_time}ms)"
+            else:
+                print("OK")
+                info["Ping"] = "OK"
         else:
             print("Timeout")
             info["Ping"] = "Timeout"
+    except psutil.subprocess.TimeoutExpired:
+        print("Timeout")
+        info["Ping"] = "Timeout"
     except Exception as e:
         print(f"ERREUR ({e})")
         info["Ping"] = "Erreur Commande"
