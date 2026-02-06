@@ -160,12 +160,13 @@ def check_simple_ports(ip, ports):
             ping_time = None
             
             if platform.system().lower() == 'windows':
-                # Windows format: "time=XXms" or "time<1ms"
+                # windows format: "time=XXms" or "time<1ms"
+                # french windows: "temps=XXms" or "temps<1ms"
                 import re
-                match = re.search(r'time[=<](\d+)ms', output, re.IGNORECASE)
+                match = re.search(r'(time|temps)[=<](\d+)ms', output, re.IGNORECASE)
                 if match:
-                    ping_time = match.group(1)
-                elif 'time<1ms' in output.lower():
+                    ping_time = match.group(2)  # group 2 is the number
+                elif 'time<1ms' in output.lower() or 'temps<1ms' in output.lower():
                     ping_time = '<1'
             else:
                 # Linux format: "time=XX.X ms"
