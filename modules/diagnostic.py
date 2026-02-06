@@ -139,13 +139,13 @@ def check_simple_ports(ip, ports):
     print(f"    > Test du Ping...", end=' ', flush=True)
     try:
         if platform.system().lower() == 'windows':
-            # Windows: -n count, -w timeout in milliseconds
+            # windows: -n count, -w timeout in milliseconds
             command = ['ping', '-n', '1', '-w', '1000', ip]
         else:
-            # Linux/Unix: -c count, -W timeout in seconds
+            # linux/unix: -c count, -W timeout in seconds
             command = ['ping', '-c', '1', '-W', '1', ip]
         
-        # Capture output to parse response time
+        # capture output to parse response time
         result = psutil.subprocess.run(
             command,
             stdout=psutil.subprocess.PIPE,
