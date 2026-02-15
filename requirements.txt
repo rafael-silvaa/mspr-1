@@ -1,0 +1,4 @@
+psutil
+paramiko
+mysql-connector-python
+requests
